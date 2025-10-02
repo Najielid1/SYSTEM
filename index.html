@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stock Inventory Manager</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <style>
+    .card-transition { transition: all 0.2s ease-in-out; }
+    .card-transition:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+    .search-highlight { background-color: #fef08a; border-radius: 2px; }
+    .bento-box { transition: all 0.3s ease; }
+    .bento-box:hover { transform: scale(1.02); }
+    .modal-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(0,0,0,0.5); z-index: 40; display: flex; align-items: center; justify-content: center;
+    }
+    .modal-content { position: relative; z-index: 50; }
+    .sticky-banner { position: sticky; top: 1rem; z-index: 30; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, createContext, useContext } = React;
+
+    // --- I18N (Internationalization) Setup ---
+    const translations = {
+        en: {
+            inventoryAccess: "Inventory Access", enterPassword: "Enter password", login: "Login", incorrectPassword: "Incorrect password.",
+            startSession: "Start Session", receiveStock: "Receive Stock", viewInvoices: "View Invoices", viewLedger: "View Ledger",
+            totalProducts: "Total Products", totalStock: "Total Stock", availablePacks: "Available Packs", lowStockItems: "Low Stock Items", stockLevelsGood: "Stock Levels Good", currentStockValue: "Current Stock Value",
+            addProduct: "Add Product", addNewProduct: "Add New Product", productName: "Product name", initialStock: "Initial stock", imageUrl: "Image URL (optional)", purchasePrice: "Purchase Price",
+            searchPlaceholder: "Search products or packs...",
+            packs: "Packs", createNewPack: "Create New Pack", cancel: "Cancel", noPacksFound: "No packs found.",
+            products: "Products", noProductsFound: "No products found.",
+            sessionInProgress: "Session in Progress", changesRecorded: "unique change(s) recorded.", endSession: "End Session",
+            sessionRequired: "Session Required", pleaseStartSession: "Please start a session before making any changes.",
+            endSessionTitle: "End Session", endSessionNote: "Add an optional note to summarize.", discardAndRevert: "Discard & Revert", saveToLedger: "Save to Ledger",
+            operationsLedger: "Operations Ledger", noLedgerEntries: "No ledger entries yet.", close: "Close",
+            confirmDelete: "This may affect packs. Continue?",
+            confirmDeletePack: "Are you sure?",
+            editImagePrompt: "Enter new image URL:",
+            invoiceTitle: "Create Purchase Invoice", searchProductToAdd: "Search for a product to add...", finalizeInvoice: "Finalize Invoice",
+            total: "Total:", pastInvoices: "Past Invoices", noInvoicesFound: "No invoices found.",
+            productDetails: "Product Details", averagePurchasePrice: "Average Purchase Price", driveFolderUrl: "Google Drive Folder Link (optional)", viewFolder: "View Folder"
+        },
+        fr: {
+            inventoryAccess: "Accès à l'inventaire", enterPassword: "Entrez le mot de passe", login: "Connexion", incorrectPassword: "Mot de passe incorrect.",
+            startSession: "Démarrer la session", receiveStock: "Recevoir du stock", viewInvoices: "Voir les factures", viewLedger: "Voir le registre",
+            totalProducts: "Produits totaux", totalStock: "Stock total", availablePacks: "Packs disponibles", lowStockItems: "Articles à faible stock", stockLevelsGood: "Niveaux de stock bons", currentStockValue: "Valeur actuelle du stock",
+            addProduct: "Ajouter un produit", addNewProduct: "Ajouter un nouveau produit", productName: "Nom du produit", initialStock: "Stock initial", imageUrl: "URL de l'image (optionnel)", purchasePrice: "Prix d'achat",
+            searchPlaceholder: "Rechercher des produits ou des packs...",
+            packs: "Packs", createNewPack: "Créer un nouveau pack", cancel: "Annuler", noPacksFound: "Aucun pack trouvé.",
+            products: "Produits", noProductsFound: "Aucun produit trouvé.",
+            sessionInProgress: "Session en cours", changesRecorded: "changement(s) unique(s) enregistré(s).", endSession: "Terminer la session",
+            sessionRequired: "Session requise", pleaseStartSession: "Veuillez démarrer une session avant de faire des modifications.",
+            endSessionTitle: "Terminer la session", endSessionNote: "Ajoutez une note facultative pour résumer.", discardAndRevert: "Annuler et Rétablir", saveToLedger: "Sauvegarder au registre",
+            operationsLedger: "Registre des opérations", noLedgerEntries: "Aucune entrée de registre.", close: "Fermer",
+            confirmDelete: "Cela peut affecter les packs. Continuer ?",
+            confirmDeletePack: "Êtes-vous sûr ?",
+            editImagePrompt: "Entrez la nouvelle URL de l'image:",
+            invoiceTitle: "Créer une facture d'achat", searchProductToAdd: "Rechercher un produit à ajouter...", finalizeInvoice: "Finaliser la facture",
+            total: "Total :", pastInvoices: "Factures passées", noInvoicesFound: "Aucune facture trouvée.",
+            productDetails: "Détails du produit", averagePurchasePrice: "Prix d'achat moyen", driveFolderUrl: "Lien dossier Google Drive (optionnel)", viewFolder: "Voir le dossier"
+        },
+        ar: {
+            inventoryAccess: "الوصول إلى المخزون", enterPassword: "أدخل كلمة المرور", login: "تسجيل الدخول", incorrectPassword: "كلمة مرور غير صحيحة.",
+            startSession: "بدء جلسة", receiveStock: "استلام بضاعة", viewInvoices: "عرض الفواتير", viewLedger: "عرض السجل",
+            totalProducts: "مجموع المنتجات", totalStock: "مجموع المخزون", availablePacks: "الحزم المتوفرة", lowStockItems: "منتجات ذات مخزون منخفض", stockLevelsGood: "مستويات المخزون جيدة", currentStockValue: "قيمة المخزون الحالية",
+            addProduct: "إضافة منتج", addNewProduct: "إضافة منتج جديد", productName: "اسم المنتج", initialStock: "المخزون الأولي", imageUrl: "رابط الصورة (اختياري)", purchasePrice: "سعر الشراء",
+            searchPlaceholder: "ابحث عن منتجات أو حزم...",
+            packs: "الحزم", createNewPack: "إنشاء حزمة جديدة", cancel: "إلغاء", noPacksFound: "لم يتم العثور على حزم.",
+            products: "المنتجات", noProductsFound: "لم يتم العثور على منتجات.",
+            sessionInProgress: "الجلسة قيد التقدم", changesRecorded: "تغيير(ات) فريد(ة) مسجلة.", endSession: "إنهاء الجلسة",
+            sessionRequired: "الجلسة مطلوبة", pleaseStartSession: "يرجى بدء جلسة قبل إجراء أي تغييرات.",
+            endSessionTitle: "إنهاء الجلسة", endSessionNote: "أضف ملاحظة اختيارية للتلخيص.", discardAndRevert: "تجاهل واستعادة", saveToLedger: "حفظ في السجل",
+            operationsLedger: "سجل العمليات", noLedgerEntries: "لا توجد إدخالات في السجل.", close: "إغلاق",
+            confirmDelete: "قد يؤثر هذا على الحزم. متابعة؟",
+            confirmDeletePack: "هل أنت متأكد؟",
+            editImagePrompt: "أدخل رابط الصورة الجديد:",
+            invoiceTitle: "إنشاء فاتورة شراء", searchProductToAdd: "ابحث عن منتج لإضافته...", finalizeInvoice: "إنهاء الفاتورة",
+            total: "المجموع:", pastInvoices: "الفواتير السابقة", noInvoicesFound: "لم يتم العثور على فواتير.",
+            productDetails: "تفاصيل المنتج", averagePurchasePrice: "متوسط سعر الشراء", driveFolderUrl: "رابط مجلد جوجل درايف (اختياري)", viewFolder: "عرض المجلد"
+        }
+    };
+
+    const LanguageContext = createContext();
+    const useTranslation = () => useContext(LanguageContext);
+
+    const LanguageProvider = ({ children }) => {
+        const [language, setLanguage] = useState(localStorage.getItem('inventoryLang') || 'en');
+        useEffect(() => {
+            localStorage.setItem('inventoryLang', language);
+            document.documentElement.lang = language;
+            document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+        }, [language]);
+        const t = (key) => translations[language]?.[key] || key;
+        return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
+    };
+
+    // --- Firebase Initialization ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDXswzHsLKCTw5z5K4BWYCoolfogybbnvE",
+      authDomain: "batal-games.firebaseapp.com",
+      projectId: "batal-games",
+      storageBucket: "batal-games.appspot.com",
+      messagingSenderId: "535042272877",
+      appId: "1:535042272877:web:708036abcab58625385964",
+      measurementId: "G-7PLD9TE007"
+    };
+
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    
+    // --- Authentication Logic ---
+    const CORRECT_HASH = '804c57db53d2861de6f3d10e3dfe076889acc39fe3ecb68e56c00eb92bada85f';
+
+    async function sha256(message) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+
+    function LoginScreen({ onLoginSuccess }) {
+        const { t } = useTranslation();
+        const [password, setPassword] = useState('');
+        const [error, setError] = useState('');
+        const [isVerifying, setIsVerifying] = useState(false);
+        const handleLogin = async () => {
+            setIsVerifying(true); setError('');
+            try {
+                if ((await sha256(password.trim())) === CORRECT_HASH) onLoginSuccess();
+                else setError(t('incorrectPassword'));
+            } catch (e) { setError('Could not verify password.'); } 
+            finally { setIsVerifying(false); }
+        };
+        return (
+            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                <div className="w-full max-w-sm bg-white rounded-lg shadow-md p-8">
+                    <h1 className="text-2xl font-bold text-center text-gray-800 mb-6">{t('inventoryAccess')}</h1>
+                    <div className="space-y-4">
+                        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} onKeyPress={e=>e.key==='Enter'&&handleLogin()} placeholder={t('enterPassword')} className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" autoFocus />
+                        <button onClick={handleLogin} disabled={isVerifying} className="w-full px-4 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center">
+                            {isVerifying ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : t('login')}
+                        </button>
+                        {error && <p className="text-sm text-center text-red-500">{error}</p>}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- Reusable Components ---
+    const ProductImage = ({ item, handleEditImage }) => {
+        const [imgSrc, setImgSrc] = useState(item.imageUrl || '');
+        const [hasError, setHasError] = useState(false);
+        useEffect(() => { setImgSrc(item.imageUrl || ''); setHasError(false); }, [item.imageUrl]);
+        return (
+            <div className="group relative w-full h-40 bg-gray-200 rounded-t-lg overflow-hidden">
+                {!hasError && imgSrc ? <img src={imgSrc} onError={() => setHasError(true)} className="w-full h-full object-cover" alt={item.name} /> : <div className="w-full h-full flex flex-col items-center justify-center text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><span className="text-xs mt-1">{item.name}</span></div>}
+                <button onClick={() => handleEditImage(item.id, item.imageUrl)} className="absolute top-2 right-2 p-1.5 bg-black bg-opacity-50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" title="Edit Image"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z" /></svg></button>
+            </div>
+        );
+    };
+
+    const InvoiceCreator = ({ items, onFinalize, onClose }) => {
+        const { t } = useTranslation();
+        const [lineItems, setLineItems] = useState([]);
+        const [searchTerm, setSearchTerm] = useState('');
+        const [driveLink, setDriveLink] = useState('');
+
+        const handleAddItem = (itemToAdd) => {
+            if (!itemToAdd || lineItems.some(item => item.id === itemToAdd.id)) return;
+            setLineItems([...lineItems, { ...itemToAdd, quantity: 1, cost: 0.00 }]);
+            setSearchTerm('');
+        };
+
+        const handleUpdateLineItem = (id, field, value) => setLineItems(lineItems.map(item => item.id === id ? { ...item, [field]: value } : item));
+        const handleRemoveLineItem = (id) => setLineItems(lineItems.filter(item => item.id !== id));
+        const grandTotal = useMemo(() => lineItems.reduce((total, item) => total + (item.quantity * item.cost), 0), [lineItems]);
+        const filteredSearchItems = useMemo(() => {
+            if (!searchTerm) return [];
+            return items.filter(item => !lineItems.some(li => li.id === item.id) && item.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        }, [searchTerm, items, lineItems]);
+
+        const handleFinalize = () => {
+            const invoiceData = {
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lineItems: lineItems.map(({ id, name, quantity, cost }) => ({ id, name, quantity, cost })),
+                grandTotal,
+                driveFolderUrl: driveLink.trim()
+            };
+            onFinalize(invoiceData);
+        };
+        
+        return (
+            <div className="modal-backdrop">
+                <div className="modal-content bg-white rounded-lg shadow-xl w-11/12 max-w-4xl h-5/6 flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b"><h2 className="text-xl font-bold">{t('invoiceTitle')}</h2></div>
+                    <div className="p-4 flex-grow overflow-y-auto bg-gray-50">
+                        <div className="relative mb-4"><input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder={t('searchProductToAdd')} className="w-full p-2 border rounded-md" />
+                            {filteredSearchItems.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border rounded-b-md shadow-lg max-h-60 overflow-y-auto z-10">{filteredSearchItems.map(item => (<div key={item.id} onClick={() => handleAddItem(item)} className="p-2 hover:bg-blue-100 cursor-pointer">{item.name}</div>))}</div>)}
+                        </div>
+                        <div className="space-y-2">{lineItems.map(item => (
+                            <div key={item.id} className="grid grid-cols-12 gap-2 items-center bg-white p-2 rounded-md shadow-sm">
+                                <span className="col-span-4 font-medium">{item.name}</span>
+                                <input type="number" min="1" value={item.quantity} onChange={e => handleUpdateLineItem(item.id, 'quantity', parseInt(e.target.value) || 1)} className="col-span-2 p-1 border rounded-md text-center" />
+                                <div className="col-span-3 flex items-center"><input type="number" step="0.01" min="0" value={item.cost} onChange={e => handleUpdateLineItem(item.id, 'cost', parseFloat(e.target.value) || 0)} className="w-full p-1 border rounded-md text-center" /><span className="ml-1 text-gray-500">DH</span></div>
+                                <span className="col-span-2 text-right font-semibold">{(item.quantity * item.cost).toFixed(2)} DH</span>
+                                <button onClick={() => handleRemoveLineItem(item.id)} className="col-span-1 text-red-500 hover:text-red-700 font-bold text-lg">✕</button>
+                            </div>))}
+                        </div>
+                        <div className="mt-4">
+                           <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder={t('driveFolderUrl')} className="w-full p-2 border rounded-md" />
+                        </div>
+                    </div>
+                    <div className="p-4 border-t flex justify-between items-center">
+                        <span className="text-xl font-bold">{t('total')} {grandTotal.toFixed(2)} DH</span>
+                        <div className="flex gap-2"><button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-md">{t('cancel')}</button><button onClick={handleFinalize} disabled={lineItems.length === 0} className="px-4 py-2 bg-green-600 text-white rounded-md disabled:bg-gray-300">{t('finalizeInvoice')}</button></div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const InvoiceViewer = ({ invoices, onClose }) => {
+        const { t } = useTranslation();
+        const [expandedId, setExpandedId] = useState(null);
+        return (
+            <div className="modal-backdrop" onClick={onClose}>
+                <div className="modal-content bg-white rounded-lg shadow-xl w-11/12 max-w-4xl h-5/6 flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b"><h2 className="text-xl font-bold">{t('pastInvoices')}</h2></div>
+                    <div className="p-4 flex-grow overflow-y-auto bg-gray-50">{invoices.length === 0 ? <p>{t('noInvoicesFound')}</p> : <ul className="space-y-2">{invoices.map(inv => (
+                        <li key={inv.id} className="bg-white p-3 rounded-md shadow-sm cursor-pointer" onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}>
+                            <div className="grid grid-cols-3 items-center">
+                                <span className="font-bold flex items-center">{inv.invoiceNumber} {inv.driveFolderUrl && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>}</span>
+                                <span className="text-sm text-gray-600">{inv.createdAt ? new Date(inv.createdAt.toDate()).toLocaleDateString() : ''}</span>
+                                <span className="font-semibold text-right">{inv.grandTotal.toFixed(2)} DH</span>
+                            </div>
+                            {expandedId === inv.id && (<div className="mt-2 pt-2 border-t">
+                                {inv.lineItems.map((line, idx) => (<div key={idx} className="grid grid-cols-3 text-sm text-gray-700"><span>{line.name}</span><span className="text-center">{line.quantity} x {line.cost.toFixed(2)} DH</span><span className="text-right">{(line.quantity * line.cost).toFixed(2)} DH</span></div>))}
+                                {inv.driveFolderUrl && <a href={inv.driveFolderUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-md">{t('viewFolder')}</a>}
+                            </div>)}
+                        </li>))}</ul>}
+                    </div>
+                    <div className="p-4 border-t text-right"><button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-md">{t('close')}</button></div>
+                </div>
+            </div>
+        );
+    };
+
+    const ProductDetailModal = ({ item, onClose }) => {
+        const { t } = useTranslation();
+        return (
+            <div className="modal-backdrop" onClick={onClose}>
+                <div className="modal-content bg-white rounded-lg shadow-xl w-11/12 max-w-md" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b"><h2 className="text-xl font-bold">{t('productDetails')}</h2></div>
+                    <div className="p-6 text-center">
+                        <div className="w-40 h-40 mx-auto bg-gray-200 rounded-lg overflow-hidden mb-4">
+                            <img src={item.imageUrl} onError={(e) => e.target.style.display = 'none'} className="w-full h-full object-cover" />
+                        </div>
+                        <h3 className="text-2xl font-bold mb-2">{item.name}</h3>
+                        <div className="text-lg">
+                            <span className="font-semibold">{t('averagePurchasePrice')}:</span> {(item.purchasePrice || 0).toFixed(2)} DH
+                        </div>
+                    </div>
+                    <div className="p-4 border-t text-right"><button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-md">{t('close')}</button></div>
+                </div>
+            </div>
+        );
+    };
+    
+    // --- Main Application Component ---
+    function StockInventoryApp() {
+      const { t, language, setLanguage } = useTranslation();
+      const [items, setItems] = useState([]); const [packs, setPacks] = useState([]); const [ledger, setLedger] = useState([]); const [invoices, setInvoices] = useState([]);
+      const [loading, setLoading] = useState(true); const [error, setError] = useState(null); const [searchQuery, setSearchQuery] = useState(''); const [editing, setEditing] = useState({ id: null, text: '' });
+      const [isLedgerVisible, setIsLedgerVisible] = useState(false); const [isInvoiceCreatorVisible, setIsInvoiceCreatorVisible] = useState(false); const [isInvoiceViewerVisible, setIsInvoiceViewerVisible] = useState(false);
+      const [detailedItemId, setDetailedItemId] = useState(null);
+      const [isSaveSessionModalVisible, setIsSaveSessionModalVisible] = useState(false); const [showStartSessionPrompt, setShowStartSessionPrompt] = useState(false);
+      const [newItemName, setNewItemName] = useState(''); const [newItemStock, setNewItemStock] = useState(''); const [newItemImageUrl, setNewItemImageUrl] = useState(''); const [newItemPurchasePrice, setNewItemPurchasePrice] = useState('');
+      const [showPackForm, setShowPackForm] = useState(false); const [newPackName, setNewPackName] = useState(''); const [packComponents, setPackComponents] = useState([]);
+      const [adjustmentItemId, setAdjustmentItemId] = useState(null); const [adjustmentPackId, setAdjustmentPackId] = useState(null); const [adjustmentValue, setAdjustmentValue] = useState('');
+      const [isSessionActive, setIsSessionActive] = useState(false); const [sessionChanges, setSessionChanges] = useState([]); const [sessionNote, setSessionNote] = useState(""); const [sessionSnapshot, setSessionSnapshot] = useState(null);
+
+      useEffect(() => {
+        const unsubItems = db.collection('items').orderBy("createdAt", "desc").onSnapshot(s => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => setError(`Items Error: ${e.message}`));
+        const unsubPacks = db.collection('packs').orderBy("createdAt", "desc").onSnapshot(s => setPacks(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => setError(`Packs Error: ${e.message}`));
+        const unsubLedger = db.collection('ledger').orderBy("sessionEndedAt", "desc").onSnapshot(s => setLedger(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => setError(`Ledger Error: ${e.message}`));
+        const unsubInvoices = db.collection('invoices').orderBy("invoiceNumber", "desc").onSnapshot(s => setInvoices(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => setError(`Invoices Error: ${e.message}`));
+        setTimeout(() => setLoading(false), 700);
+        return () => { unsubItems(); unsubPacks(); unsubLedger(); unsubInvoices(); };
+      }, []);
+      
+      const logChange = (change) => {
+        setSessionChanges(prev => {
+            if (change.type !== 'UPDATE_STOCK' && change.type !== 'ADJUST_PACK_STOCK') return [...prev, change];
+            const existingChangeIndex = prev.findIndex(c => c.type === change.type && c.targetId === change.targetId);
+            if (existingChangeIndex > -1) {
+                const updatedChanges = [...prev]; const existing = updatedChanges[existingChangeIndex];
+                existing.totalChange += change.totalChange;
+                existing.details = `${change.type === 'UPDATE_STOCK' ? 'Stock' : 'Units'} changed from ${existing.initialStock} to ${existing.initialStock + existing.totalChange} (${existing.totalChange > 0 ? '+' : ''}${existing.totalChange})`;
+                return updatedChanges;
+            } else { return [...prev, change]; }
+        });
+      };
+
+      const withLedger = (operationFn) => async (...args) => {
+        if (!isSessionActive) { setShowStartSessionPrompt(true); return; }
+        const changeDescription = await operationFn(...args, true);
+        if (changeDescription) logChange(changeDescription);
+      };
+
+      const addItem = async (isCapturing) => {
+        if (!newItemName.trim() || !newItemPurchasePrice) return;
+        const name = newItemName.trim(); const stock = parseInt(newItemStock) || 0; const purchasePrice = parseFloat(newItemPurchasePrice) || 0;
+        const docRef = await db.collection('items').add({ name, stock, purchasePrice, imageUrl: newItemImageUrl.trim(), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+        setNewItemName(''); setNewItemStock(''); setNewItemImageUrl(''); setNewItemPurchasePrice('');
+        if (isCapturing) return { type: 'CREATE_ITEM', name, targetId: docRef.id, details: `Created with stock of ${stock} at ${purchasePrice.toFixed(2)} DH` };
+      };
+
+      const updateItem = async (id, field, value, isCapturing) => {
+          const item = items.find(i => i.id === id); if (!item) return;
+          await db.collection('items').doc(id).update({ [field]: value });
+          if (field === 'name') setEditing({ id: null, text: '' });
+          if (isCapturing) return { type: 'UPDATE_ITEM', name: field === 'name' ? value : item.name, targetId: id, details: `${field} changed from '${item[field]}' to '${value}'` };
+      };
+      
+      const updateStock = async (id, change, isCapturing) => {
+        const item = items.find(i => i.id === id); if(!item) return;
+        await db.collection('items').doc(id).update({ stock: firebase.firestore.FieldValue.increment(change) });
+        setAdjustmentItemId(null); setAdjustmentValue('');
+        if(isCapturing) return { type: 'UPDATE_STOCK', name: item.name, targetId: id, initialStock: item.stock, totalChange: change, details: `Stock changed from ${item.stock} to ${item.stock + change} (${change > 0 ? '+' : ''}${change})` };
+      };
+
+      const deleteItem = async (id, isCapturing) => {
+        if (!confirm(t('confirmDelete'))) return;
+        const item = items.find(i => i.id === id); if (!item) return;
+        await db.collection('items').doc(id).delete();
+        if(isCapturing) return { type: 'DELETE_ITEM', name: item.name, targetId: id, details: 'Item removed from inventory' };
+      };
+
+      const addPack = async (isCapturing) => {
+          if (!newPackName.trim() || packComponents.length === 0) return;
+          const name = newPackName.trim(); const components = packComponents.map(({itemId, quantity}) => ({itemId, quantity}));
+          const docRef = await db.collection('packs').add({ name, components, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+          setNewPackName(''); setPackComponents([]); setShowPackForm(false);
+          if(isCapturing) return { type: 'CREATE_PACK', name, targetId: docRef.id, details: `Created with ${components.length} component(s)`};
+      };
+
+      const updatePackName = async (id, newName, isCapturing) => {
+        const pack = packs.find(p => p.id === id); if (!pack || !newName.trim()) return;
+        await db.collection('packs').doc(id).update({ name: newName.trim() }); setEditing({id: null, text: ''});
+        if (isCapturing) return { type: 'UPDATE_PACK', name: newName.trim(), targetId: id, details: `Name changed from '${pack.name}' to '${newName.trim()}'` };
+      };
+      
+      const updatePackStock = async (packId, quantity, isCapturing) => {
+        const pack = packs.find(p => p.id === packId); if (!pack) return;
+        const batch = db.batch();
+        pack.components.forEach(c => {
+            const itemDocRef = db.collection('items').doc(c.itemId);
+            batch.update(itemDocRef, { stock: firebase.firestore.FieldValue.increment(-c.quantity * quantity) });
+        });
+        await batch.commit(); setAdjustmentPackId(null); setAdjustmentValue('');
+        const initialAvailability = calculatePackAvailability(pack);
+        if(isCapturing) return { type: 'ADJUST_PACK_STOCK', name: pack.name, targetId: packId, initialStock: initialAvailability, totalChange: quantity, details: `Units changed by ${quantity > 0 ? '+' : ''}${quantity}`};
+      };
+
+      const deletePack = async (id, isCapturing) => {
+        if (!confirm(t('confirmDeletePack'))) return;
+        const pack = packs.find(p => p.id === id); if (!pack) return;
+        await db.collection('packs').doc(id).delete();
+        if(isCapturing) return { type: 'DELETE_PACK', name: pack.name, targetId: id, details: 'Pack removed' };
+      };
+      
+      const handleEditImage = async (id, currentUrl) => {
+          const newUrl = prompt(t('editImagePrompt'), currentUrl || "");
+          if (newUrl !== null) await db.collection('items').doc(id).update({ imageUrl: newUrl.trim() });
+      };
+      
+      const handleFinalizeInvoice = async (invoiceData, isCapturing) => {
+          const counterRef = db.collection('counters').doc('invoiceCounter');
+          let newInvoiceNumber;
+          await db.runTransaction(async (transaction) => {
+              const counterDoc = await transaction.get(counterRef);
+              newInvoiceNumber = (counterDoc.exists ? counterDoc.data().currentNumber : 0) + 1;
+              transaction.set(counterRef, { currentNumber: newInvoiceNumber }, { merge: true });
+          });
+          const formattedInvoiceNumber = `INV-${String(newInvoiceNumber).padStart(3, '0')}`;
+          const finalInvoiceData = { ...invoiceData, invoiceNumber: formattedInvoiceNumber };
+          const batch = db.batch();
+          finalInvoiceData.lineItems.forEach(item => {
+              const itemRef = db.collection('items').doc(item.id);
+              batch.update(itemRef, { stock: firebase.firestore.FieldValue.increment(item.quantity) });
+          });
+          const invoiceRef = db.collection('invoices').doc();
+          batch.set(invoiceRef, finalInvoiceData);
+          await batch.commit();
+          setIsInvoiceCreatorVisible(false);
+          if(isCapturing) return {type: 'CREATE_INVOICE', name: `Invoice ${formattedInvoiceNumber}`, targetId: invoiceRef.id, details: `Received ${finalInvoiceData.lineItems.length} items. Total: ${finalInvoiceData.grandTotal.toFixed(2)} DH`};
+      };
+
+      const handleStartSession = () => {
+        setSessionSnapshot({ items: JSON.parse(JSON.stringify(items)), packs: JSON.parse(JSON.stringify(packs)), invoices: JSON.parse(JSON.stringify(invoices)) });
+        setIsSessionActive(true); setSessionChanges([]);
+      };
+      
+      const handleDiscardSession = async () => {
+          if (!sessionSnapshot) { resetSession(); return; }
+          try {
+              const batch = db.batch();
+              const currentItems = new Map(items.map(i => [i.id, i]));
+              const currentPacks = new Map(packs.map(p => [p.id, p]));
+              sessionSnapshot.items.forEach(itemSnapshot => { batch.set(db.collection('items').doc(itemSnapshot.id), itemSnapshot); currentItems.delete(itemSnapshot.id); });
+              sessionSnapshot.packs.forEach(packSnapshot => { batch.set(db.collection('packs').doc(packSnapshot.id), packSnapshot); currentPacks.delete(packSnapshot.id); });
+              currentItems.forEach((_, id) => batch.delete(db.collection('items').doc(id)));
+              currentPacks.forEach((_, id) => batch.delete(db.collection('packs').doc(id)));
+              
+              const invoicesCreatedInSession = sessionChanges.filter(c => c.type === 'CREATE_INVOICE').map(c => c.targetId);
+              invoicesCreatedInSession.forEach(invoiceId => batch.delete(db.collection('invoices').doc(invoiceId)));
+              
+              await batch.commit();
+          } catch(e) { setError("Failed to revert changes. Please refresh."); } 
+          finally { resetSession(); }
+      };
+      
+      const resetSession = () => {
+          setIsSessionActive(false); setSessionChanges([]); setSessionNote(""); setIsSaveSessionModalVisible(false); setSessionSnapshot(null);
+      };
+
+      const handleAttemptEndSession = () => { sessionChanges.length === 0 ? resetSession() : setIsSaveSessionModalVisible(true); };
+      const handleSaveSession = async () => {
+        if (sessionChanges.length === 0) { resetSession(); return; }
+        await db.collection('ledger').add({ sessionEndedAt: firebase.firestore.FieldValue.serverTimestamp(), note: sessionNote || "No summary provided.", changes: sessionChanges });
+        resetSession();
+      };
+      
+      const calculatePackAvailability = useMemo(() => (pack) => {
+        if (!pack?.components || pack.components.length === 0) return 0;
+        return Math.min(...pack.components.map(c => {
+          const item = items.find(i => i.id === c.itemId);
+          return (item && c.quantity > 0) ? Math.floor(item.stock / c.quantity) : 0;
+        }));
+      }, [items]);
+
+      const dashboardMetrics = useMemo(() => ({
+        totalStockValue: items.reduce((sum, i) => sum + (i.stock || 0), 0),
+        totalAvailablePacks: packs.reduce((sum, p) => sum + calculatePackAvailability(p), 0),
+        lowStockItems: items.filter(i => i.stock < 5).length,
+        currentStockValue: items.reduce((sum, i) => sum + ((i.stock || 0) * (i.purchasePrice || 0)), 0),
+      }), [items, packs, calculatePackAvailability]);
+
+      const filteredItems = useMemo(() => items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase())), [items, searchQuery]);
+      const filteredPacks = useMemo(() => packs.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.components && p.components.some(c => items.find(i => i.id === c.itemId)?.name.toLowerCase().includes(searchQuery.toLowerCase())))), [packs, items, searchQuery]);
+      const detailedItem = useMemo(() => items.find(item => item.id === detailedItemId), [detailedItemId, items]);
+      if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>;
+
+      return (
+        <div className="min-h-screen bg-gray-50 p-4 font-sans">
+          {isLedgerVisible && <div className="modal-backdrop" onClick={() => setIsLedgerVisible(false)}><div className="modal-content bg-white rounded-lg shadow-xl w-11/12 max-w-4xl h-3/4 flex flex-col" onClick={e => e.stopPropagation()}><div className="p-4 border-b"><h2 className="text-xl font-bold">{t('operationsLedger')}</h2></div><div className="p-4 flex-grow overflow-y-auto bg-gray-50">{ledger.length === 0 ? <p>{t('noLedgerEntries')}</p> : <ul className="space-y-4">{ledger.map(entry => (<li key={entry.id} className="bg-white p-4 rounded-lg shadow"><div className="flex justify-between items-center mb-2"><p className="font-bold text-lg">{entry.note}</p><p className="text-sm text-gray-500">{entry.sessionEndedAt ? new Date(entry.sessionEndedAt.toDate()).toLocaleString() : ''}</p></div><ul className="space-y-1 pl-4 border-l-2">{entry.changes.map((change, index) => (<li key={index} className="text-sm text-gray-700"><span className="font-semibold">{change.name}</span>: {change.details}</li>))}</ul></li>))}</ul>}</div><div className="p-4 border-t text-right"><button onClick={() => setIsLedgerVisible(false)} className="px-4 py-2 bg-gray-200 rounded-md">{t('close')}</button></div></div></div>}
+          {isSaveSessionModalVisible && <div className="modal-backdrop"><div className="modal-content bg-white rounded-lg shadow-xl w-11/12 max-w-lg"><div className="p-6"><h2 className="text-xl font-bold mb-4">{t('endSessionTitle')}</h2><p className="mb-4">{sessionChanges.length} {t('changesRecorded')}. {t('endSessionNote')}</p><textarea value={sessionNote} onChange={e => setSessionNote(e.target.value)} placeholder="e.g., Weekly stock intake..." className="w-full p-2 border rounded-md" rows="3"></textarea></div><div className="px-6 py-4 bg-gray-50 flex justify-between"><button onClick={handleDiscardSession} className="px-4 py-2 bg-red-100 text-red-700 rounded-md">{t('discardAndRevert')}</button><div className="flex gap-3"><button onClick={() => setIsSaveSessionModalVisible(false)} className="px-4 py-2 bg-gray-200 rounded-md">{t('cancel')}</button><button onClick={handleSaveSession} className="px-4 py-2 bg-blue-600 text-white rounded-md">{t('saveToLedger')}</button></div></div></div></div>}
+          {showStartSessionPrompt && <div className="modal-backdrop"><div className="modal-content bg-white rounded-lg shadow-xl w-11/12 max-w-sm text-center p-6"><h2 className="text-xl font-bold mb-4">{t('sessionRequired')}</h2><p className="mb-6">{t('pleaseStartSession')}</p><div className="flex gap-4"><button onClick={() => setShowStartSessionPrompt(false)} className="w-full px-4 py-2 bg-gray-200 rounded-md">{t('cancel')}</button><button onClick={() => { handleStartSession(); setShowStartSessionPrompt(false); }} className="w-full px-4 py-2 bg-blue-600 text-white rounded-md">{t('startSession')}</button></div></div></div>}
+          {isInvoiceCreatorVisible && <InvoiceCreator items={items} onFinalize={withLedger(handleFinalizeInvoice)} onClose={() => setIsInvoiceCreatorVisible(false)} />}
+          {isInvoiceViewerVisible && <InvoiceViewer invoices={invoices} onClose={() => setIsInvoiceViewerVisible(false)} />}
+          {detailedItem && <ProductDetailModal item={detailedItem} onClose={() => setDetailedItemId(null)} />}
+          
+          <div className="max-w-6xl mx-auto">
+            {isSessionActive && <div className="sticky-banner bg-blue-600 text-white rounded-lg p-4 mb-6 flex justify-between items-center shadow-lg"><div><h3 className="font-bold text-lg">{t('sessionInProgress')}</h3><p>{sessionChanges.length} {t('changesRecorded')}</p></div><button onClick={handleAttemptEndSession} className="bg-white text-blue-600 font-bold px-4 py-2 rounded-md hover:bg-blue-100">{t('endSession')}</button></div>}
+            
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div className="flex flex-wrap justify-between items-center gap-4">
+                    <div><h1 className="text-2xl font-bold text-gray-800">Stock Inventory Manager</h1></div>
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap gap-2">
+                            {!isSessionActive && <button onClick={handleStartSession} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">{t('startSession')}</button>}
+                            <button onClick={()=>withLedger(()=>setIsInvoiceCreatorVisible(true))()} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">{t('receiveStock')}</button>
+                            <button onClick={() => setIsInvoiceViewerVisible(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">{t('viewInvoices')}</button>
+                            <button onClick={() => setIsLedgerVisible(true)} className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700">{t('viewLedger')}</button>
+                        </div>
+                        <select value={language} onChange={e => setLanguage(e.target.value)} className="p-2 border rounded-md bg-gray-100">
+                            <option value="en">English</option>
+                            <option value="fr">Français</option>
+                            <option value="ar">العربية</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+              <div className="bento-box bg-blue-50 rounded-xl p-4 shadow-sm border"><h3 className="text-sm font-medium text-blue-800 mb-1">{t('totalProducts')}</h3><p className="text-2xl font-bold text-blue-900">{items.length}</p></div>
+              <div className="bento-box bg-green-50 rounded-xl p-4 shadow-sm border"><h3 className="text-sm font-medium text-green-800 mb-1">{t('totalStock')}</h3><p className="text-2xl font-bold text-green-900">{dashboardMetrics.totalStockValue}</p></div>
+              <div className="bento-box bg-purple-50 rounded-xl p-4 shadow-sm border"><h3 className="text-sm font-medium text-purple-800 mb-1">{t('availablePacks')}</h3><p className="text-2xl font-bold text-purple-900">{dashboardMetrics.totalAvailablePacks}</p></div>
+              <div className={`bento-box rounded-xl p-4 shadow-sm border ${dashboardMetrics.lowStockItems > 0 ? 'bg-amber-50' : 'bg-emerald-50'}`}><h3 className="text-sm font-medium mb-1">{dashboardMetrics.lowStockItems > 0 ? t('lowStockItems') : t('stockLevelsGood')}</h3><p className={`text-2xl font-bold ${dashboardMetrics.lowStockItems > 0 ? 'text-amber-800' : 'text-emerald-800'}`}>{dashboardMetrics.lowStockItems > 0 ? `${dashboardMetrics.lowStockItems} items` : 'All good'}</p></div>
+              <div className="bento-box bg-cyan-50 rounded-xl p-4 shadow-sm border"><h3 className="text-sm font-medium text-cyan-800 mb-1">{t('currentStockValue')}</h3><p className="text-2xl font-bold text-cyan-900">{dashboardMetrics.currentStockValue.toFixed(2)} DH</p></div>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <h2 className="text-lg font-semibold mb-4">{t('addNewProduct')}</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <input type="text" placeholder={t('productName')} value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="sm:col-span-2 px-3 py-2 border rounded-md" />
+                  <input type="number" placeholder={t('initialStock')} value={newItemStock} onChange={e=>setNewItemStock(e.target.value)} className="px-3 py-2 border rounded-md" />
+                  <input type="number" placeholder={t('purchasePrice')} value={newItemPurchasePrice} onChange={e=>setNewItemPurchasePrice(e.target.value)} className="px-3 py-2 border rounded-md" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                  <input type="url" placeholder={t('imageUrl')} value={newItemImageUrl} onChange={e=>setNewItemImageUrl(e.target.value)} className="sm:col-span-3 px-3 py-2 border rounded-md" />
+                  <button onClick={()=>withLedger(addItem)()} disabled={!isSessionActive || !newItemName.trim() || !newItemPurchasePrice} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300">{t('addProduct')}</button>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-6"><input type="search" placeholder={t('searchPlaceholder')} value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} className="w-full px-3 py-2 border rounded-md"/></div>
+            
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-semibold">{t('packs')} ({filteredPacks.length})</h2><button onClick={()=>withLedger(()=>setShowPackForm(!showPackForm))()} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">{showPackForm ? t('cancel') : t('createNewPack')}</button></div>
+              {showPackForm && <div className="mb-6 p-4 bg-gray-100 rounded-lg border"></div>}
+              {filteredPacks.length===0&&!showPackForm?<div className="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">{t('noPacksFound')}</div>:<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{filteredPacks.map(pack=>{const available=calculatePackAvailability(pack);return(<div key={pack.id} className="bg-white rounded-lg shadow-sm border p-4 card-transition flex flex-col justify-between"><div><div className="flex justify-between items-start mb-2">{editing.id===pack.id?<input type="text" value={editing.text} onChange={e=>setEditing({...editing,text:e.target.value})} className="text-lg font-medium border-b-2 w-full" autoFocus onKeyDown={e=>e.key==='Enter'&&withLedger(updatePackName)(pack.id,editing.text)}/>:<h3 className="text-lg font-medium">{pack.name}</h3>}<span className={`flex-shrink-0 ml-2 px-2 py-1 rounded-full text-xs font-medium ${available>5?'bg-green-100 text-green-800':'bg-red-100 text-red-800'}`}>{available} available</span></div><div className="mb-4"><h4 className="text-sm font-medium text-gray-500 mb-1">Components:</h4><ul className="space-y-1">{pack.components?.map((c,i)=><li key={i} className="text-sm text-gray-600">{c.quantity} &times; {items.find(item=>item.id===c.itemId)?.name||'N/A'}</li>)}</ul></div></div><div className="flex flex-col space-y-2 mt-auto">{editing.id===pack.id?<div className="flex gap-2"><button onClick={()=>withLedger(updatePackName)(pack.id,editing.text)} className="w-full px-2 py-1 text-xs bg-blue-600 text-white rounded">Save</button><button onClick={()=>setEditing({id:null,text:''})} className="w-full px-2 py-1 text-xs bg-gray-200 rounded">{t('cancel')}</button></div>:<div className="grid grid-cols-5 gap-2 text-center"><button onClick={()=>withLedger(updatePackStock)(pack.id,-1)} className="p-1 text-xs bg-green-100 rounded" title="Add 1 pack to stock (returns components)">+1</button><button onClick={()=>withLedger(updatePackStock)(pack.id,1)} disabled={available<=0} className="p-1 text-xs bg-red-100 rounded disabled:opacity-50" title="Subtract 1 pack (consumes components)">-1</button><button onClick={()=>setAdjustmentPackId(pack.id===adjustmentPackId?null:pack.id)} className="p-1 text-xs bg-blue-100 rounded">Adj</button><button onClick={()=>withLedger(()=>setEditing({id:pack.id,text:pack.name}))()} className="p-1 text-xs bg-yellow-100 rounded">Edit</button><button onClick={()=>withLedger(deletePack)(pack.id)} className="p-1 text-xs bg-gray-200 rounded">Del</button></div>}{adjustmentPackId===pack.id&&<div className="flex items-center space-x-2"><input type="number" min="1" value={adjustmentValue} onChange={e=>setAdjustmentValue(e.target.value)} className="flex-1 p-1 text-xs border rounded"/><button onClick={()=>withLedger(updatePackStock)(pack.id,Math.abs(parseInt(adjustmentValue))||0)} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Sub</button><button onClick={()=>withLedger(updatePackStock)(pack.id,-Math.abs(parseInt(adjustmentValue))||0)} className="px-2 py-1 text-xs bg-green-600 text-white rounded">Add</button></div>}</div></div>)})}</div>}
+            </div>
+
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-4">{t('products')} ({filteredItems.length})</h2>
+              {filteredItems.length===0?<div className="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">{t('noProductsFound')}</div>:<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{filteredItems.map(item=>(<div key={item.id} className="bg-white rounded-lg shadow-sm border card-transition flex flex-col justify-between">
+                <ProductImage item={item} handleEditImage={handleEditImage} />
+                <div className="p-4 flex flex-col flex-grow justify-between">
+                  <div>
+                    <div className="flex justify-between items-start">{editing.id===item.id?<input type="text" value={editing.text} onChange={e=>setEditing({...editing,text:e.target.value})} className="text-lg font-medium border-b-2 w-full" autoFocus onKeyDown={e=>e.key==='Enter'&&withLedger(updateItem) (item.id, 'name', editing.text)}/>:<h3 className="text-lg font-medium">{item.name}</h3>}<span className={`flex-shrink-0 ml-2 text-xl font-bold ${item.stock<5?'text-amber-600':'text-gray-800'}`}>{item.stock}</span></div>
+                  </div>
+                  <div className="mt-4 flex flex-col space-y-2">{editing.id===item.id?<div className="flex gap-2"><button onClick={()=>withLedger(updateItem)(item.id, 'name', editing.text)} className="w-full px-2 py-1 text-xs bg-blue-600 text-white rounded">Save</button><button onClick={()=>setEditing({id:null,text:''})} className="w-full px-2 py-1 text-xs bg-gray-200 rounded">{t('cancel')}</button></div>:<div className="grid grid-cols-5 gap-2 text-center"><button onClick={()=>withLedger(updateStock)(item.id,1)} className="p-1 text-xs bg-green-100 rounded">+1</button><button onClick={()=>withLedger(updateStock)(item.id,-1)} disabled={item.stock<=0} className="p-1 text-xs bg-red-100 rounded disabled:opacity-50">-1</button><button onClick={()=>setAdjustmentItemId(item.id===adjustmentItemId?null:item.id)} className="p-1 text-xs bg-blue-100 rounded">Adj</button><button onClick={()=>withLedger(()=>setEditing({id:item.id,text:item.name}))()} className="p-1 text-xs bg-yellow-100 rounded">Edit</button><button onClick={()=>withLedger(deleteItem)(item.id)} className="p-1 text-xs bg-gray-200 rounded">Del</button></div>}{adjustmentItemId===item.id&&<div className="flex items-center space-x-2"><input type="number" min="1" value={adjustmentValue} onChange={e=>setAdjustmentValue(e.target.value)} className="flex-1 p-1 text-xs border rounded"/><button onClick={()=>withLedger(updateStock)(item.id,Math.abs(parseInt(adjustmentValue))||0)} className="px-2 py-1 text-xs bg-green-600 text-white rounded">Add</button><button onClick={()=>withLedger(updateStock)(item.id,-Math.abs(parseInt(adjustmentValue))||0)} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Sub</button></div>}</div>
+                   <button onClick={() => setDetailedItemId(item.id)} className="mt-2 text-xs text-blue-600 hover:underline">Know More</button>
+                </div>
+              </div>))}</div>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // --- App Wrapper for Authentication ---
+    function App() {
+        const [isAuthenticated, setIsAuthenticated] = useState(false);
+        return (
+            <LanguageProvider>
+                {!isAuthenticated ? <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} /> : <StockInventoryApp />}
+            </LanguageProvider>
+        );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
+
