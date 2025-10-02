@@ -8,9 +8,9 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage-compat.js"></script>
   <style>
     .card-transition { transition: all 0.2s ease-in-out; }
     .card-transition:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
@@ -113,15 +113,15 @@
     };
 
     // --- Firebase Initialization ---
-   const firebaseConfig = {
-  apiKey: "AIzaSyCjkTXzQ4WQmIypn994IMhLnM2MR1XsM3A",
-  authDomain: "inventory-6fa68.firebaseapp.com",
-  projectId: "inventory-6fa68",
-  storageBucket: "inventory-6fa68.appspot.com", // <-- THE ONLY CHANGE IS THIS LINE
-  messagingSenderId: "615249015921",
-  appId: "1:615249015921:web:e5fa5fa119a4bce214d7d0"
-};
-
+    const firebaseConfig = {
+      apiKey: "AIzaSyCjkTXzQ4WQmIypn994IMhLnM2MR1XsM3A",
+      authDomain: "inventory-6fa68.firebaseapp.com",
+      projectId: "inventory-6fa68",
+      storageBucket: "inventory-6fa68.appspot.com",
+      messagingSenderId: "615249015921",
+      appId: "1:615249015921:web:e5fa5fa119a4bce214d7d0"
+    };
+    
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const storage = firebase.storage();
