@@ -111,7 +111,7 @@
             document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
         }, [language]);
         const t = (key) => translations[language]?.[key] || key;
-        return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
+        return <LanguageContext.Provider value={{ language, setLanguage, at }}>{children}</LanguageContext.Provider>;
     };
 
     // --- Firebase Initialization ---
