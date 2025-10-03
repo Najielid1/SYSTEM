@@ -1,4 +1,42 @@
-<script type="text/babel">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stock Inventory Manager</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+  
+  <style>
+    .card-transition { transition: all 0.2s ease-in-out; }
+    .card-transition:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+    .bento-box { transition: all 0.3s ease; }
+    .bento-box:hover { transform: scale(1.03); border-color: rgba(67, 56, 202, 0.4); }
+    .modal-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(0,0,0,0.5); z-index: 40; display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(4px);
+    }
+    .modal-content { position: relative; z-index: 50; }
+    .sticky-banner { position: sticky; top: 1rem; z-index: 30; }
+    .form-section-transition { transition: all 0.3s ease-in-out; overflow: hidden; }
+    .error-toast {
+        position: fixed; bottom: 1rem; right: 1rem; z-index: 100;
+        animation: slide-in 0.5s ease-out forwards;
+    }
+    @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
     const { useState, useEffect, useMemo, createContext, useContext, useRef } = React;
 
     // --- I18N (Internationalization) Setup ---
@@ -76,7 +114,6 @@
             document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
         }, [language]);
         const t = (key) => translations[language]?.[key] || key;
-        // THIS LINE IS NOW CORRECTED
         return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
     };
 
@@ -639,9 +676,11 @@
         return (
             <LanguageProvider>
                 {!isAuthenticated ? <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} /> : <StockInventoryApp />}
-            </LanguageProvider>
+            </Language-Provider>
         );
     }
 
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>
+</body>
+</html>
