@@ -310,45 +310,61 @@
     };
 
     // --- [NEW] Image Compression Helper ---
-    const compressImage = (file, quality = 0.7, maxWidth = 1024) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onerror = (error) => reject(error);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onerror = (error) => reject(error);
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let { width, height } = img;
+// Lighter image compression: avoids base64 and uses createImageBitmap
+// - Resizes longest side to <= 1280 (tweakable)
+// - Re-encodes as JPEG at 0.72 quality (tweakable)
+// - Uses OffscreenCanvas when available to reduce UI thread memory
+const compressImage = async (file, quality = 0.72, maxSide = 1280) => {
+  if (!(file instanceof Blob)) throw new Error("Expected a File/Blob");
 
-                    if (width > maxWidth) {
-                        height = (maxWidth / width) * height;
-                        width = maxWidth;
-                    }
+  // Decode efficiently (no base64 copy)
+  const bitmap = await createImageBitmap(file, { colorSpaceConversion: "default" });
 
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+  // Compute target size
+  let { width, height } = bitmap;
+  if (width >= height && width > maxSide) {
+    height = Math.round((maxSide / width) * height);
+    width = maxSide;
+  } else if (height > width && height > maxSide) {
+    width = Math.round((maxSide / height) * width);
+    height = maxSide;
+  }
 
-                    canvas.toBlob(
-                        (blob) => {
-                            if (blob) {
-                                // The compressed blob is the new file to upload
-                                resolve(blob);
-                            } else {
-                                reject(new Error('Canvas to Blob conversion failed'));
-                            }
-                        },
-                        'image/jpeg',
-                        quality
-                    );
-                };
-            };
-        });
-    };
+  // Draw on an offscreen canvas if available
+  const makeCanvas = (w, h) => {
+    if (typeof OffscreenCanvas !== "undefined") {
+      return new OffscreenCanvas(w, h);
+    }
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    return c;
+  };
+
+  const canvas = makeCanvas(width, height);
+  const ctx = canvas.getContext("2d", { alpha: false });
+  // Better resampling for downscale
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  // We can release the bitmap memory now
+  if (bitmap.close) bitmap.close();
+
+  // Encode to JPEG
+  const blob = await (async () => {
+    // OffscreenCanvas path
+    if (canvas instanceof OffscreenCanvas) {
+      return await canvas.convertToBlob({ type: "image/jpeg", quality });
+    }
+    // DOM canvas path
+    return await new Promise((resolve, reject) =>
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/jpeg", quality)
+    );
+  })();
+
+  return blob; // Blob of JPEG (use .jpg extension when naming the file)
+};
     
     // --- Main Application Component ---
     function StockInventoryApp() {
