@@ -402,42 +402,53 @@
 
       // --- [MODIFIED] Image Upload Logic ---
       const handleImageUpload = (file) => {
-          return new Promise(async (resolve, reject) => {
-              if (!file || !file.type.startsWith('image/')) {
-                  alert('Please select a valid image file.');
-                  return reject(new Error('Invalid file type'));
-              }
-              
-              try {
-                  // Step 1: Compress the image
-                  const compressedBlob = await compressImage(file);
-                  
-                  // Step 2: Create a new file name and upload the compressed blob
-                  const originalFileName = file.name.split('.').slice(0, -1).join('.');
-                  const fileName = `${Date.now()}-${originalFileName}.jpg`;
-                  const storageRef = storage.ref(`product-images/${fileName}`);
-                  const uploadTask = storageRef.put(compressedBlob);
-                  
-                  // Step 3: Handle the upload process
-                  uploadTask.on('state_changed',
-                      (snapshot) => { /* Progress updates can be handled here */ },
-                      (error) => {
-                          console.error("Upload error:", error);
-                          setError(t('uploadError'));
-                          reject(error);
-                      },
-                      () => {
-                          uploadTask.snapshot.ref.getDownloadURL().then(resolve).catch(reject);
-                      }
-                  );
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!file || !file.type.startsWith('image/')) {
+        alert('Please select a valid image file.');
+        return reject(new Error('Invalid file type'));
+      }
 
-              } catch (compressionError) {
-                  console.error("Compression Error:", compressionError);
-                  setError(t('compressionError'));
-                  reject(compressionError);
-              }
-          });
+      // 👉 compress using your existing helper
+      const compressedBlob = await compressImage(file, 0.7, 1024); // quality,width as you prefer
+
+      // Use .jpg extension since we re-encode to JPEG
+      const base = file.name.replace(/\.[^.]+$/, '');
+      const fileName = `${Date.now()}-${base}.jpg`;
+
+      const storageRef = storage.ref(`product-images/${fileName}`);
+      const metadata = {
+        contentType: 'image/jpeg',             // 👈 important
+        cacheControl: 'public,max-age=31536000'
       };
+
+      const uploadTask = storageRef.put(compressedBlob, metadata);
+
+      uploadTask.on(
+        'state_changed',
+        () => {}, // you can show progress if you want
+        (error) => {
+          console.error('Upload error:', error);
+          setError(t('uploadError'));
+          reject(error);
+        },
+        async () => {
+          try {
+            const url = await uploadTask.snapshot.ref.getDownloadURL();
+            resolve(url);
+          } catch (e) {
+            reject(e);
+          }
+        }
+      );
+    } catch (compressionError) {
+      console.error('Compression Error:', compressionError);
+      setError(t('compressionError'));
+      reject(compressionError);
+    }
+  });
+};
+
       
       const handleProductImageEdit = async (itemId, file, isCapturing) => {
           const item = items.find(i => i.id === itemId);
@@ -458,18 +469,22 @@
 
       const onNewProductFileChange = async (e) => {
           const file = e.target.files[0];
-          if (file) {
-              try {
-                  setIsUploading(true);
-                  const url = await handleImageUpload(file);
-                  setNewItemImageUrl(url);
-                  setIsUploading(false);
-              } catch (error) {
-                  // Error is already set inside handleImageUpload
-                  setIsUploading(false);
-              }
-          }
-      };
+              if (!file) return;
+
+                // Immediate local preview
+                const localUrl = URL.createObjectURL(file);
+                setNewItemImageUrl(localUrl);
+
+  try {
+    setIsUploading(true);
+    const url = await handleImageUpload(file);
+    setNewItemImageUrl(url);     // replace preview with CDN url
+  } finally {
+    setIsUploading(false);
+    URL.revokeObjectURL(localUrl); // tidy up
+  }
+};
+
 
       const addItem = async (isCapturing) => {
         if (!newItemName.trim() || !newItemPurchasePrice) return;
