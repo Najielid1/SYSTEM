@@ -58,7 +58,8 @@
             invoiceTitle: "Create Purchase Invoice", searchProductToAdd: "Search for a product to add...", finalizeInvoice: "Finalize Invoice",
             total: "Total:", pastInvoices: "Past Invoices", noInvoicesFound: "No invoices found.",
             productDetails: "Product Details", averagePurchasePrice: "Average Purchase Price", driveFolderUrl: "Google Drive Folder Link (optional)", viewFolder: "View Folder", cancel: "Cancel",
-            uploadError: "Upload failed. Check permissions or network."
+            uploadError: "Upload failed. Check permissions or network.",
+            compressionError: "Image compression failed. Please try a different image."
         },
         fr: {
             inventoryAccess: "Accès à l'inventaire", enterPassword: "Entrez le mot de passe", login: "Connexion", incorrectPassword: "Mot de passe incorrect.",
@@ -77,7 +78,8 @@
             invoiceTitle: "Créer une facture d'achat", searchProductToAdd: "Rechercher un produit à ajouter...", finalizeInvoice: "Finaliser la facture",
             total: "Total :", pastInvoices: "Factures passées", noInvoicesFound: "Aucune facture trouvée.",
             productDetails: "Détails du produit", averagePurchasePrice: "Prix d'achat moyen", driveFolderUrl: "Lien dossier Google Drive (optionnel)", viewFolder: "Voir le dossier", cancel: "Annuler",
-            uploadError: "Échec du téléversement. Vérifiez les permissions ou la connexion."
+            uploadError: "Échec du téléversement. Vérifiez les permissions ou la connexion.",
+            compressionError: "La compression de l'image a échoué. Veuillez essayer une autre image."
         },
         ar: {
             inventoryAccess: "الوصول إلى المخزون", enterPassword: "أدخل كلمة المرور", login: "تسجيل الدخول", incorrectPassword: "كلمة مرور غير صحيحة.",
@@ -96,7 +98,8 @@
             invoiceTitle: "إنشاء فاتورة شراء", searchProductToAdd: "ابحث عن منتج لإضافته...", finalizeInvoice: "إنهاء الفاتورة",
             total: "المجموع:", pastInvoices: "الفواتير السابقة", noInvoicesFound: "لم يتم العثور على فواتير.",
             productDetails: "تفاصيل المنتج", averagePurchasePrice: "متوسط سعر الشراء", driveFolderUrl: "رابط مجلد جوجل درايف (اختياري)", viewFolder: "عرض المجلد", cancel: "إلغاء",
-            uploadError: "فشل الرفع. تحقق من الأذونات أو الاتصال بالشبكة."
+            uploadError: "فشل الرفع. تحقق من الأذونات أو الاتصال بالشبكة.",
+            compressionError: "فشل ضغط الصورة. يرجى تجربة صورة مختلفة."
         }
     };
 
@@ -111,7 +114,7 @@
             document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
         }, [language]);
         const t = (key) => translations[language]?.[key] || key;
-        return <LanguageContext.Provider value={{ language, setLanguage, at }}>{children}</LanguageContext.Provider>;
+        return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
     };
 
     // --- Firebase Initialization ---
@@ -119,7 +122,7 @@
       apiKey: "AIzaSyCjkTXzQ4WQmIypn994IMhLnM2MR1XsM3A",
       authDomain: "inventory-6fa68.firebaseapp.com",
       projectId: "inventory-6fa68",
-      storageBucket: "inventory-6fa68.firebasestorage.app",
+      storageBucket: "inventory-6fa68.appspot.com",
       messagingSenderId: "615249015921",
       appId: "1:615249015921:web:e5fa5fa119a4bce214d7d0"
     };
@@ -305,6 +308,47 @@
             </div>
         );
     };
+
+    // --- [NEW] Image Compression Helper ---
+    const compressImage = (file, quality = 0.7, maxWidth = 1024) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onerror = (error) => reject(error);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onerror = (error) => reject(error);
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let { width, height } = img;
+
+                    if (width > maxWidth) {
+                        height = (maxWidth / width) * height;
+                        width = maxWidth;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob(
+                        (blob) => {
+                            if (blob) {
+                                // The compressed blob is the new file to upload
+                                resolve(blob);
+                            } else {
+                                reject(new Error('Canvas to Blob conversion failed'));
+                            }
+                        },
+                        'image/jpeg',
+                        quality
+                    );
+                };
+            };
+        });
+    };
     
     // --- Main Application Component ---
     function StockInventoryApp() {
@@ -356,27 +400,42 @@
         if (changeDescription) logChange(changeDescription);
       };
 
+      // --- [MODIFIED] Image Upload Logic ---
       const handleImageUpload = (file) => {
-          return new Promise((resolve, reject) => {
+          return new Promise(async (resolve, reject) => {
               if (!file || !file.type.startsWith('image/')) {
                   alert('Please select a valid image file.');
                   return reject(new Error('Invalid file type'));
               }
-              const fileName = `${Date.now()}-${file.name}`;
-              const storageRef = storage.ref(`product-images/${fileName}`);
-              const uploadTask = storageRef.put(file);
+              
+              try {
+                  // Step 1: Compress the image
+                  const compressedBlob = await compressImage(file);
+                  
+                  // Step 2: Create a new file name and upload the compressed blob
+                  const originalFileName = file.name.split('.').slice(0, -1).join('.');
+                  const fileName = `${Date.now()}-${originalFileName}.jpg`;
+                  const storageRef = storage.ref(`product-images/${fileName}`);
+                  const uploadTask = storageRef.put(compressedBlob);
+                  
+                  // Step 3: Handle the upload process
+                  uploadTask.on('state_changed',
+                      (snapshot) => { /* Progress updates can be handled here */ },
+                      (error) => {
+                          console.error("Upload error:", error);
+                          setError(t('uploadError'));
+                          reject(error);
+                      },
+                      () => {
+                          uploadTask.snapshot.ref.getDownloadURL().then(resolve).catch(reject);
+                      }
+                  );
 
-              uploadTask.on('state_changed', 
-                  (snapshot) => {},
-                  (error) => {
-                      console.error("Upload error:", error);
-                      setError(t('uploadError'));
-                      reject(error);
-                  },
-                  () => {
-                      uploadTask.snapshot.ref.getDownloadURL().then(resolve).catch(reject);
-                  }
-              );
+              } catch (compressionError) {
+                  console.error("Compression Error:", compressionError);
+                  setError(t('compressionError'));
+                  reject(compressionError);
+              }
           });
       };
       
